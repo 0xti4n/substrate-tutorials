@@ -13,8 +13,8 @@ pub type UniqueAssetId = u128;
 #[scale_info(skip_type_params(S))]
 #[codec(mel_bound())]
 pub struct UniqueAssetDetails<T: Config, S: Get<u32>> {
-	creator: T::AccountId,
-	metadata: BoundedVec<u8, S>,
+	pub creator: T::AccountId,
+	pub metadata: BoundedVec<u8, S>,
 	pub supply: u128,
 }
 

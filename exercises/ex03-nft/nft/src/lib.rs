@@ -16,7 +16,7 @@ use types::*;
 pub mod pallet {
 	use super::*;
 	use frame_support::pallet_prelude::*;
-	use frame_system::pallet_prelude::*;
+	use frame_system::pallet_prelude::{*, OriginFor};
 
 	#[pallet::config]
 	pub trait Config: frame_system::Config + scale_info::TypeInfo {
@@ -94,11 +94,62 @@ pub mod pallet {
 			metadata: BoundedVec<u8, T::MaxLength>,
 			supply: u128,
 		) -> DispatchResult {
+			let origin = ensure_signed(origin.clone())?;
+			ensure!(supply > 0, Error::<T>::NoSupply);
+
+			let id = Self::nonce();
+			let details = UniqueAssetDetails::<T, <T as Config>::MaxLength>::new(origin.clone(), metadata, supply);
+
+			UniqueAsset::<T>::insert(id, details);
+			Nonce::<T>::set(id.saturating_add(1));
+
+			Account::<T>::mutate(id, origin.clone(), |balance| {
+				*balance += supply;
+			});
+
+			Self::deposit_event(Event::<T>::Created {
+				creator: origin,
+				asset_id: id,
+			});
+
 			Ok(())
 		}
 
 		#[pallet::weight(0)]
-		pub fn burn(origin: OriginFor<T>, asset_id: UniqueAssetId, amount: u128) -> DispatchResult {
+		pub fn burn(
+			origin: OriginFor<T>,
+			asset_id: UniqueAssetId,
+			amount: u128) -> DispatchResult {
+
+			let origin = ensure_signed(origin.clone())?;
+			Self::ensure_is_owner(asset_id, origin.clone())?;
+
+			let mut burned_asset = 0;
+			UniqueAsset::<T>::try_mutate(asset_id, |maybe_details| -> DispatchResult {
+				let details = maybe_details.as_mut().ok_or(Error::<T>::UnknownAssetId)?;
+
+				let old_supply = details.supply;
+				let acc_total = Self::account(asset_id, origin.clone());
+				if amount > acc_total {
+					details.supply = details.supply.saturating_sub(acc_total);
+				} else {
+					details.supply = details.supply.saturating_sub(amount);
+				}
+				burned_asset = old_supply - details.supply;
+				Ok(())
+			})?;
+
+			Account::<T>::mutate(asset_id, origin.clone(), |balance| {
+				*balance -= burned_asset;
+			});
+
+			let total = Self::unique_asset(asset_id).ok_or(Error::<T>::UnknownAssetId)?;
+			Self::deposit_event(Event::<T>::Burned {
+				asset_id: asset_id,
+				owner: origin,
+				total_supply: total.supply
+			});
+
 			Ok(())
 		}
 
@@ -109,6 +160,32 @@ pub mod pallet {
 			amount: u128,
 			to: T::AccountId,
 		) -> DispatchResult {
+
+			let origin = ensure_signed(origin.clone())?;
+			Self::ensure_is_owner(asset_id.clone(), origin.clone())?;
+
+			let mut acc_balance = Self::account(asset_id.clone(), origin.clone());
+			if amount < acc_balance {
+				acc_balance = amount;
+			}
+
+			Account::<T>::mutate(asset_id, origin.clone(), |balance| {
+				*balance -= acc_balance;
+			});
+
+			Account::<T>::mutate(asset_id, to.clone(), |balance| {
+				*balance += acc_balance;
+			});
+
+			Ok(())
+		}
+	}
+
+	impl<T: Config> Pallet<T> {
+		/// helper function
+		fn ensure_is_owner(asset_id: UniqueAssetId, account: T::AccountId) -> Result<(), Error::<T>> {
+			let details = Self::unique_asset(asset_id).ok_or(Error::<T>::UnknownAssetId)?;
+			ensure!(details.creator == account, Error::<T>::NotOwned);
 			Ok(())
 		}
 	}

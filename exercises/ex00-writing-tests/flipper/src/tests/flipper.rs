@@ -12,17 +12,29 @@ fn set_value_ok() {
 
 #[test]
 fn set_value_err_already_set() {
-	new_test_ext().execute_with(|| todo!("Verify if the function returns the expected error."));
+	new_test_ext().execute_with(|| {
+		let signer = Origin::signed(ALICE);
+		assert_ok!(Flipper::set_value(signer.clone(), false));
+		assert_noop!(Flipper::set_value(signer, false), Error::<TestRuntime>::AlreadySet);
+
+	});
 }
 
 #[test]
 fn flip_value_ok() {
 	new_test_ext()
-		.execute_with(|| todo!("Ensure the good behaviour of the flip_value() function."));
+		.execute_with(|| {
+			let signer = Origin::signed(ALICE);
+			assert_ok!(Flipper::set_value(signer.clone(), false));
+			assert_ok!(Flipper::flip_value(signer));
+		});
 }
 
 #[test]
 fn flip_value_ko() {
 	new_test_ext()
-		.execute_with(|| todo!("write a scenario that triggers an error in flip_value()"));
+		.execute_with(|| {
+			let signer = Origin::signed(ALICE);
+			assert_noop!(Flipper::flip_value(signer), Error::<TestRuntime>::NoneValue);
+		});
 }
